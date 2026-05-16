@@ -39,7 +39,7 @@ def conectar_google_sheets():
         return None
 
 # -----------------------------------------------------------------------------
-# FUNÇÕES DE LEITURA E ESCRITA
+# FUNÇÕES DE LEITURA E ESCRITA COM CORREÇÃO DE DECIMAIS
 # -----------------------------------------------------------------------------
 def carregar_aba(nome_aba):
     """Carrega os dados de uma aba específica da planilha como DataFrame limpando números."""
@@ -54,8 +54,9 @@ def carregar_aba(nome_aba):
             colunas_dinheiro = ['preco_unitario', 'preco_total', 'custo_total', 'custo_por_pote']
             for col in colunas_dinheiro:
                 if col in df.columns:
-                    # Garante que é texto, troca vírgula por ponto e converte para número
+                    # Garante que é texto, remove R$, troca vírgula por ponto e converte para número
                     df[col] = df[col].astype(str).str.strip()
+                    df[col] = df[col].str.replace('R$', '', regex=False).str.strip()
                     df[col] = df[col].str.replace(',', '.', regex=False)
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
             
@@ -64,11 +65,18 @@ def carregar_aba(nome_aba):
             st.error(f"Erro ao carregar a aba {nome_aba}: {e}")
     return pd.DataFrame(), None
 
+def adicionar_linha_sheets(aba, nova_linha_lista):
+    """Adiciona uma nova linha no final da aba selecionada."""
+    try:
+        aba.append_row(nova_linha_lista, value_input_option='USER_ENTERED')
+    except Exception as e:
+        st.error(f"Erro ao salvar dados na planilha: {e}")
+
 # Carrega os dados das duas abas do Sheets já tratados
 df_lotes, aba_lotes = carregar_aba("lotes")
 df_compras, aba_compras = carregar_aba("compras_lote")
 
-# Garantir tipos de IDs como numéricos inteiros
+# Garantir tipos de IDs como numéricos inteiros para evitar falhas de filtro
 if not df_lotes.empty:
     df_lotes['id_lote'] = pd.to_numeric(df_lotes['id_lote'], errors='coerce').fillna(0).astype(int)
 if not df_compras.empty:
@@ -116,7 +124,7 @@ with col1:
             with c_qtd:
                 quantidade = st.number_input("Quantidade", min_value=1, value=1, step=1)
             with c_preco:
-                preco_unitario = st.number_input("Preço Unitário (R$)", min_value=0.0, value=0.0, step=0.50, format="%.2f")
+                preco_unitario = st.number_input("Preço Unitário (R$)", min_value=0.0, value=0.0, step=0.01, format="%.2f")
             
             preco_total_item = quantidade * preco_unitario
             st.info(f"Subtotal do Item: R$ {preco_total_item:.2f}")
@@ -149,6 +157,7 @@ with col2:
             st.warning("Nenhuma compra registrada para este lote ainda.")
             custo_total_lote = 0.0
         else:
+            # Exibição da tabela com formatação correta de colunas
             st.dataframe(compras_do_lote[['item', 'quantidade', 'preco_unitario', 'preco_total']], use_container_width=True, hide_index=True)
             
             custo_total_lote = float(compras_do_lote['preco_total'].sum())
@@ -165,7 +174,6 @@ with col2:
                 if st.button("Salvar Fechamento na Planilha", use_container_width=True):
                     if aba_lotes is not None:
                         # Encontra a linha exata no Sheets para atualizar.
-                        # Somamos 2 porque as linhas no gspread começam em 1 e a linha 1 são os cabeçalhos.
                         lista_ids = df_lotes['id_lote'].tolist()
                         linha_sheets = lista_ids.index(id_lote_sel) + 2
                         
