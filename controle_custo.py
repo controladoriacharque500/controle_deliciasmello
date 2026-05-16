@@ -42,22 +42,32 @@ def conectar_google_sheets():
 # FUNÇÕES DE LEITURA E ESCRITA COM CORREÇÃO DE DECIMAIS
 # -----------------------------------------------------------------------------
 def carregar_aba(nome_aba):
-    """Carrega os dados de uma aba específica da planilha como DataFrame limpando números."""
+    """Carrega os dados de uma aba trazendo valores brutos do Sheets para não perder a vírgula."""
     planilha = conectar_google_sheets()
     if planilha:
         try:
             aba = planilha.worksheet(nome_aba)
-            data = aba.get_all_records()
+            
+            # Buscamos os dados mantendo a formatação bruta/texto para não engolir a vírgula
+            data = aba.get_all_records(numeric_formatting='RAW')
             df = pd.DataFrame(data)
             
-            # --- Tratamento para converter o padrão de vírgula do Sheets para ponto do Python ---
+            # Se a tabela estiver vazia, retorna o DF com a estrutura limpa
+            if df.empty:
+                return df, aba
+                
+            # --- Tratamento robusto para converter os textos de moeda com vírgula para número do Python ---
             colunas_dinheiro = ['preco_unitario', 'preco_total', 'custo_total', 'custo_por_pote']
             for col in colunas_dinheiro:
                 if col in df.columns:
-                    # Garante que é texto, remove R$, troca vírgula por ponto e converte para número
+                    # 1. Garante que tudo é string, remove espaços e o símbolo R$ se houver
                     df[col] = df[col].astype(str).str.strip()
                     df[col] = df[col].str.replace('R$', '', regex=False).str.strip()
+                    
+                    # 2. Se o Sheets mandou algo como '9.90' (ponto), não mexemos. Se mandou '9,90' (vírgula), trocemos por ponto.
                     df[col] = df[col].str.replace(',', '.', regex=False)
+                    
+                    # 3. Converte para float numérico do Python. O que der erro vira zero (0.0)
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
             
             return df, aba
