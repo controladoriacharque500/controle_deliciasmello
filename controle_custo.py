@@ -39,29 +39,33 @@ def conectar_google_sheets():
         return None
 
 # -----------------------------------------------------------------------------
-# FUNÇÕES DE LEITURA E ESCRITA (PADRÃO AMERICANO / PONTO DECIMAL)
+# FUNÇÕES DE LEITURA E ESCRITA
 # -----------------------------------------------------------------------------
 def carregar_aba(nome_aba):
-    """Carrega os dados trazendo valores como texto/RAW e força o uso de ponto decimal."""
+    """Carrega os dados e trata qualquer número misturado com vírgula ou texto."""
     planilha = conectar_google_sheets()
     if planilha:
         try:
             aba = planilha.worksheet(nome_aba)
-            # numeric_formatting='RAW' impede o Sheets de tentar auto-converter e corromper os dados
-            data = aba.get_all_records(numeric_formatting='RAW')
+            # Carrega de forma padrão compatível com todas as versões do gspread
+            data = aba.get_all_records()
             df = pd.DataFrame(data)
             
             if df.empty:
                 return df, aba
                 
-            # --- Força a conversão das colunas financeiras usando o PONTO ---
+            # --- Tratamento Robusto de Texto para Número Decimal ---
             colunas_dinheiro = ['preco_unitario', 'preco_total', 'custo_total', 'custo_por_pote']
             for col in colunas_dinheiro:
                 if col in df.columns:
+                    # Converte para texto, remove R$ e espaços extras
                     df[col] = df[col].astype(str).str.strip()
                     df[col] = df[col].str.replace('R$', '', regex=False).str.strip()
-                    # Caso ainda exista alguma vírgula antiga salva na planilha, ela é convertida para ponto
+                    
+                    # Corrige se houver vírgula na planilha (ex: "9,9" vira "9.9")
                     df[col] = df[col].str.replace(',', '.', regex=False)
+                    
+                    # Se após a remoção da vírgula o número virar algo incorreto, o Pandas converte com segurança
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
             
             return df, aba
@@ -70,19 +74,19 @@ def carregar_aba(nome_aba):
     return pd.DataFrame(), None
 
 def adicionar_linha_sheets(aba, nova_linha_lista):
-    """Adiciona uma nova linha garantindo que os floats usem ponto no formato string."""
+    """Adiciona uma nova linha transformando floats em strings explicitamente com ponto."""
     try:
-        # Converte valores numéricos para strings limpas com ponto, evitando que o Sheets mude para vírgula
+        # Garante que floats e ints vão como string textual para o Sheets não forçar vírgula regional
         linha_formatada = [
             str(item) if isinstance(item, (float, int)) else item 
             for item in nova_linha_lista
         ]
-        # RAW garante que o Google Sheets grave EXATAMENTE o texto enviado (ex: "9.90"), sem converter para padrão local
-        aba.append_row(linha_formatada, value_input_option='RAW')
+        # Salva usando USER_ENTERED que aceita a string de ponto perfeitamente
+        aba.append_row(linha_formatada, value_input_option='USER_ENTERED')
     except Exception as e:
         st.error(f"Erro ao salvar dados na planilha: {e}")
 
-# Carrega os dados das duas abas do Sheets já tratados com o padrão de ponto (.)
+# Carrega os dados das duas abas do Sheets já tratados
 df_lotes, aba_lotes = carregar_aba("lotes")
 df_compras, aba_compras = carregar_aba("compras_lote")
 
@@ -131,7 +135,6 @@ with col1:
             with c_qtd:
                 quantidade = st.number_input("Quantidade", min_value=1, value=1, step=1)
             with c_preco:
-                # Entrada nativa com ponto no Streamlit
                 preco_unitario = st.number_input("Preço Unitário (R$)", min_value=0.0, value=0.0, step=0.01, format="%.2f")
             
             preco_total_item = round(quantidade * preco_unitario, 2)
@@ -162,7 +165,6 @@ with col2:
             st.warning("Nenhuma compra registrada para este lote ainda.")
             custo_total_lote = 0.0
         else:
-            # Exibe os dados com ponto perfeitamente alinhados
             st.dataframe(compras_do_lote[['item', 'quantidade', 'preco_unitario', 'preco_total']], use_container_width=True, hide_index=True)
             
             custo_total_lote = round(float(compras_do_lote['preco_total'].sum()), 2)
@@ -181,12 +183,11 @@ with col2:
                         lista_ids = df_lotes['id_lote'].tolist()
                         linha_sheets = lista_ids.index(id_lote_sel) + 2
                         
-                        # Atualiza mandando strings formatadas com ponto para travar o comportamento do Sheets
                         aba_lotes.update_cell(linha_sheets, 4, int(rendimento))
                         aba_lotes.update_cell(linha_sheets, 5, str(custo_total_lote))
                         aba_lotes.update_cell(linha_sheets, 6, str(custo_por_pote))
                         
-                        st.success("💾 Dados de fechamento atualizados com sucesso no Google Drive!")
+                        st.success("💾 Dados de fechamento updated com sucesso no Google Drive!")
                         st.rerun()
 
 # --- HISTÓRICO COMPLETO DA PLANILHA ---
