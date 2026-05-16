@@ -90,7 +90,7 @@ if not df_vendas.empty:
 # -----------------------------------------------------------------------------
 # NAVEGAÇÃO LATERAL (MENU)
 # -----------------------------------------------------------------------------
-st.sidebar.title("メニュー Navegação")
+st.sidebar.title("🗂️ Navegação")
 modulo = st.sidebar.radio("Selecione o Módulo:", ["📦 Custos do Lote", "💰 Vendas e Lucros"])
 
 # =============================================================================
