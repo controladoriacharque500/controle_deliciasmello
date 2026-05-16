@@ -42,34 +42,37 @@ def conectar_google_sheets():
 # FUNÇÕES DE LEITURA E ESCRITA
 # -----------------------------------------------------------------------------
 def carregar_aba(nome_aba):
-    """Carrega os dados de uma aba específica da planilha como DataFrame."""
+    """Carrega os dados de uma aba específica da planilha como DataFrame limpando números."""
     planilha = conectar_google_sheets()
     if planilha:
         try:
             aba = planilha.worksheet(nome_aba)
             data = aba.get_all_records()
-            return pd.DataFrame(data), aba
+            df = pd.DataFrame(data)
+            
+            # --- Tratamento para converter o padrão de vírgula do Sheets para ponto do Python ---
+            colunas_dinheiro = ['preco_unitario', 'preco_total', 'custo_total', 'custo_por_pote']
+            for col in colunas_dinheiro:
+                if col in df.columns:
+                    # Garante que é texto, troca vírgula por ponto e converte para número
+                    df[col] = df[col].astype(str).str.strip()
+                    df[col] = df[col].str.replace(',', '.', regex=False)
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            
+            return df, aba
         except Exception as e:
             st.error(f"Erro ao carregar a aba {nome_aba}: {e}")
     return pd.DataFrame(), None
 
-def adicionar_linha_sheets(aba, nova_linha_lista):
-    """Adiciona uma nova linha no final da aba selecionada."""
-    try:
-        aba.append_row(nova_linha_lista, value_input_option='USER_ENTERED')
-    except Exception as e:
-        st.error(f"Erro ao salvar dados na planilha: {e}")
-
-# Carrega os dados das duas abas do Sheets
+# Carrega os dados das duas abas do Sheets já tratados
 df_lotes, aba_lotes = carregar_aba("lotes")
 df_compras, aba_compras = carregar_aba("compras_lote")
 
-# Garantir tipos numéricos corretos para evitar erros de cálculo
+# Garantir tipos de IDs como numéricos inteiros
 if not df_lotes.empty:
-    df_lotes['id_lote'] = pd.to_numeric(df_lotes['id_lote'], errors='coerce')
+    df_lotes['id_lote'] = pd.to_numeric(df_lotes['id_lote'], errors='coerce').fillna(0).astype(int)
 if not df_compras.empty:
-    df_compras['id_lote'] = pd.to_numeric(df_compras['id_lote'], errors='coerce')
-    df_compras['preco_total'] = pd.to_numeric(df_compras['preco_total'], errors='coerce')
+    df_compras['id_lote'] = pd.to_numeric(df_compras['id_lote'], errors='coerce').fillna(0).astype(int)
 
 # -----------------------------------------------------------------------------
 # INTERFACE DO STREAMLIT
